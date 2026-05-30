@@ -40,8 +40,7 @@
     const ref = await addDoc(collection(db, 'orders'), {
       name, phone: '+91' + phone,
       kgQty: kg, fishDetails: fish, address: address,
-      status: 'Pending Call',
-      address: '', notes: '',
+      status: 'Pending Call',notes: '',
       bookedAt: serverTimestamp()
     });
     return ref.id;
