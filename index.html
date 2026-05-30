@@ -660,10 +660,18 @@ function downloadBill(o){
   } else {
     fishRows='<tr><td colspan="4" style="color:#999;text-align:center">No fish breakdown added yet</td></tr>';
   }
+  // Fix: Firestore Timestamp loses .toDate() after JSON.stringify
+  // It becomes {seconds:..., nanoseconds:...} — reconstruct from seconds
   var date='—';
-  if(o.bookedAt&&o.bookedAt.toDate) date=o.bookedAt.toDate().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
-  else if(o.bookedAt&&typeof o.bookedAt==='string') date=new Date(o.bookedAt).toLocaleString('en-IN');
-
+  if(o.bookedAt){
+    if(typeof o.bookedAt.toDate==='function'){
+      date=o.bookedAt.toDate().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+    } else if(o.bookedAt.seconds){
+      date=new Date(o.bookedAt.seconds*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+    } else if(typeof o.bookedAt==='string'){
+      date=new Date(o.bookedAt).toLocaleString('en-IN');
+    }
+  }
   var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bill - '+(o.orderId||o.id)+'</title>'+
   '<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;padding:40px;max-width:680px;margin:0 auto;color:#1a1a1a}'+
   '.header{text-align:center;border-bottom:3px solid #0a2540;padding-bottom:20px;margin-bottom:28px}'+
@@ -701,6 +709,7 @@ function downloadBill(o){
   '<div class="cod-badge">💵 Cash on Delivery — Payment collected at time of delivery</div>'+
   '<div class="section"><h3>Order Info</h3><div class="info-grid">'+
   '<div class="info-box"><div class="label">Booked On</div><div class="value" style="font-size:.85rem">'+date+'</div></div>'+
+  '<div class="info-box"><div class="label">Total Quantity</div><div class="value">'+h(o.kgQty||'—')+'</div></div>'+
   '<div class="info-box"><div class="label">Status</div><div class="value"><span class="status-badge" style="background:'+(o.status==='Delivered'?'#e8f9f0':o.status==='Confirmed'?'#e8f4ff':'#fff8e8')+';color:'+(o.status==='Delivered'?'#00873f':o.status==='Confirmed'?'#0070cc':'#8a5a00')+'">'+h(o.status||'—')+'</span></div></div>'+
   (o.notes?'<div class="info-box" style="grid-column:1/-1"><div class="label">Notes</div><div class="value" style="font-size:.88rem;font-weight:400">'+h(o.notes)+'</div></div>':'')+
   '</div></div>'+
@@ -757,8 +766,8 @@ async function saveEdit(){
   // validate fish items don't exceed total
   var fishItems=getFishItems();
   var fishKgSum=fishItems.reduce(function(sum,f){return sum+(f.kg||0);},0);
-  if(fishKgSum>totalKgVal){
-    alert('Fish breakdown total ('+fishKgSum.toFixed(1)+' kg) exceeds total quantity ('+totalKgVal+' kg). Please fix before saving.');
+  if(fishKgSum!==totalKgVal){
+    alert('Fish breakdown ('+fishKgSum.toFixed(1)+' kg) must exactly match total quantity ('+totalKgVal+' kg).\n\nPlease adjust fish quantities until you see the ✅ green match.');
     return;
   }
 
