@@ -435,6 +435,7 @@ async function handleBooking(){
   nameEl.classList.remove('err');pwEl.classList.remove('err');kgWrap.classList.remove('err');
   if(!name){nameEl.classList.add('err');nameEl.focus();return;}
   if(!phone||phone.length<10){pwEl.classList.add('err');phoneEl.focus();return;}
+  if(!kg||isNaN(parseInt(kg))||parseInt(kg)<5){kgWrap.classList.add('err');kgEl.focus();alert('Minimum order is 5 kg. Please enter 5 or more.');return;}
   if(!address){document.getElementById('fc-address').style.borderColor='var(--red)';document.getElementById('fc-address').focus();return;}
   var btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='Saving…';
   try{
@@ -501,13 +502,13 @@ function filterOrders(status){
   Object.keys(groups).forEach(function(date){
     html+='<div style="margin-bottom:2rem">';
     html+='<div style="font-size:.8rem;color:var(--teal);text-transform:uppercase;letter-spacing:2px;font-weight:500;padding:.5rem 0;border-bottom:1px solid rgba(0,180,216,.15);margin-bottom:.8rem">📅 '+date+'</div>';
-    html+='<div class="admin-table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Address</th><th>Fish</th><th>Qty</th><th>Time</th><th></th></tr></thead><tbody>';
+    html+='<div class="admin-table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Address</th><th>Notes</th><th>Fish</th><th>Qty</th><th>Time</th><th></th></tr></thead><tbody>';
     groups[date].forEach(function(o){
       var time='—';
       if(o.bookedAt&&o.bookedAt.toDate) time=o.bookedAt.toDate().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});
       else if(o.bookedAt&&typeof o.bookedAt==='string') time=new Date(o.bookedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
       var slug=o.status.replace(/\s/g,'');
-      html+='<tr><td><strong>'+h(o.name)+'</strong></td><td>'+h(o.phone)+'</td><td><span class="status-badge status-'+slug+'">'+h(o.status)+'</span></td><td>'+(o.address?h(o.address):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.fishDetails?h(o.fishDetails):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.kgQty?h(o.kgQty):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td style="color:var(--text-muted);font-size:.78rem">'+time+'</td>';
+      html+='<tr><td><strong>'+h(o.name)+'</strong></td><td>'+h(o.phone)+'</td><td><span class="status-badge status-'+slug+'">'+h(o.status)+'</span></td><td>'+(o.address?h(o.address):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'<td style="font-size:.82rem;color:var(--sand);max-width:140px">'+(o.notes?h(o.notes):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>'+'</td><td>'+(o.fishDetails?h(o.fishDetails):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.kgQty?h(o.kgQty):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td style="color:var(--text-muted);font-size:.78rem">'+time+'</td>';
       html+='<td style="display:flex;gap:.4rem"><button class="edit-btn" onclick=\'openEdit('+JSON.stringify(o)+')\'>Edit</button><button onclick=\'deleteOrder("'+o.id+'")\' style="background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.3);color:#ff8a8a;border-radius:8px;padding:.3rem .7rem;font-family:\'DM Sans\',sans-serif;font-size:.78rem;cursor:pointer">🗑</button></td></tr>';
     });
     html+='</tbody></table></div></div>';
