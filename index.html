@@ -37,10 +37,12 @@
 
   // Customers: create bookings only (Firestore Rules block reading)
   window._saveBooking = async (name, phone, kg, fish, address) => {
+    const orderId = 'FM-' + Math.random().toString(36).substr(2,6).toUpperCase();
     const ref = await addDoc(collection(db, 'orders'), {
-      name, phone: '+91' + phone,
+      orderId, name, phone: '+91' + phone,
       kgQty: kg, fishDetails: fish, address: address,
-      status: 'Pending Call',notes: '',
+      status: 'Pending Call', notes: '',
+      fishItems: [], totalPrice: '',
       bookedAt: serverTimestamp()
     });
     return ref.id;
@@ -396,7 +398,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)
       <div class="astat"><div class="astat-num" id="cntConfirmed" style="color:var(--teal)">—</div><div class="astat-label">Confirmed</div></div>
       <div class="astat"><div class="astat-num" id="cntDelivered" style="color:var(--green)">—</div><div class="astat-label">Delivered</div></div>
     </div>
-    <div style="display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center">   <span style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-weight:500">Filter:</span>   <button onclick="filterOrders('All')" id="f-All" class="filter-btn active-filter">All</button>   <button onclick="filterOrders('Pending Call')" id="f-Pending" class="filter-btn">⏳ Pending</button>   <button onclick="filterOrders('Confirmed')" id="f-Confirmed" class="filter-btn">✅ Confirmed</button>   <button onclick="filterOrders('Delivered')" id="f-Delivered" class="filter-btn">📦 Delivered</button> </div> <div id="ordersArea"><div class="loading-state"><div class="spinner"></div>Loading orders…</div></div>
+    <div style="margin-bottom:1rem">
+  <input id="orderSearch" oninput="searchOrders(this.value)" placeholder="🔍  Search by Order ID (e.g. FM-K7X9M2)…" style="width:100%;max-width:380px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:.7rem 1rem;color:var(--white);font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='rgba(255,255,255,.1)'">
+</div>
+<div style="display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center">   <span style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-weight:500">Filter:</span>   <button onclick="filterOrders('All')" id="f-All" class="filter-btn active-filter">All</button>   <button onclick="filterOrders('Pending Call')" id="f-Pending" class="filter-btn">⏳ Pending</button>   <button onclick="filterOrders('Confirmed')" id="f-Confirmed" class="filter-btn">✅ Confirmed</button>   <button onclick="filterOrders('Delivered')" id="f-Delivered" class="filter-btn">📦 Delivered</button> </div> <div id="ordersArea"><div class="loading-state"><div class="spinner"></div>Loading orders…</div></div>
   </div>
 </div>
 <div class="edit-modal-bg" id="editModalBg">
@@ -406,8 +411,15 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)
     <div class="edit-field"><label>Customer Name</label><input type="text" id="editName" readonly style="opacity:.6;cursor:not-allowed"></div>
     <div class="edit-field"><label>Phone</label><input type="text" id="editPhone" readonly style="opacity:.6;cursor:not-allowed"></div>
     <div class="edit-field"><label>Delivery Address</label><input type="text" id="editAddress" placeholder="Full delivery address collected on call"></div>
-    <div class="edit-field"><label>Fish Type(s) Confirmed</label><input type="text" id="editFish" placeholder="e.g. Rohu, Catla, Tilapia"></div>
-    <div class="edit-field"><label>Total Quantity (kg)</label><input type="text" id="editKg" placeholder="e.g. 20"></div>
+    <div class="edit-field">
+  <label>Fish Breakdown <span style="color:var(--teal);font-size:.72rem;text-transform:none;letter-spacing:0;font-weight:400">— Add each fish separately</span></label>
+  <div id="fishItemsContainer" style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:.6rem"></div>
+  <button type="button" onclick="addFishRow()" style="background:rgba(0,180,216,.1);border:1px dashed rgba(0,180,216,.4);color:var(--teal);border-radius:8px;padding:.5rem 1rem;font-family:'DM Sans',sans-serif;font-size:.82rem;cursor:pointer;width:100%;transition:all .2s">+ Add Fish</button>
+</div>
+<div class="edit-field">
+  <label>Total Price (₹) <span id="autoTotalLabel" style="color:var(--green);font-size:.75rem;text-transform:none;letter-spacing:0;font-weight:400"></span></label>
+  <input type="text" id="editTotalPrice" placeholder="Auto-calculated from fish breakdown above">
+</div>
     <div class="edit-field"><label>Status</label>
       <select id="editStatus">
         <option value="Pending Call">⏳ Pending Call</option>
@@ -473,22 +485,8 @@ async function loadOrders(){
   document.getElementById('cntDelivered').textContent=delv;
   filterOrders('All');
 }
-
-function filterOrders(status){
-  // update active button
-  ['All','Pending','Confirmed','Delivered'].forEach(function(s){
-    var btn=document.getElementById('f-'+s);
-    if(btn) btn.classList.remove('active-filter');
-  });
-  var activeId = status==='Pending Call'?'f-Pending':status==='Confirmed'?'f-Confirmed':status==='Delivered'?'f-Delivered':'f-All';
-  var btn=document.getElementById(activeId);
-  if(btn) btn.classList.add('active-filter');
-
-  var orders = status==='All' ? allOrders : allOrders.filter(function(o){return o.status===status;});
-
+function renderOrders(orders){
   if(orders.length===0){document.getElementById('ordersArea').innerHTML='<div class="empty-state"><span>📋</span>No orders found.</div>';return;}
-
-  // Group by date
   var groups={};
   orders.forEach(function(o){
     var date='Unknown Date';
@@ -497,23 +495,46 @@ function filterOrders(status){
     if(!groups[date]) groups[date]=[];
     groups[date].push(o);
   });
-
   var html='';
   Object.keys(groups).forEach(function(date){
     html+='<div style="margin-bottom:2rem">';
     html+='<div style="font-size:.8rem;color:var(--teal);text-transform:uppercase;letter-spacing:2px;font-weight:500;padding:.5rem 0;border-bottom:1px solid rgba(0,180,216,.15);margin-bottom:.8rem">📅 '+date+'</div>';
-    html+='<div class="admin-table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Address</th><th>Notes</th><th>Fish</th><th>Qty</th><th>Time</th><th></th></tr></thead><tbody>';
-    groups[date].forEach(function(o){
+    html+='<div class="admin-table-wrap"><table><thead><tr><th>Order ID</th><th>Name</th><th>Phone</th><th>Status</th><th>Address</th><th>Notes</th><th>Fish</th><th>Qty</th><th>Total</th><th>Time</th><th></th></tr></thead><tbody>';
+    orders.filter(function(o){
+      var d='Unknown Date';
+      if(o.bookedAt&&o.bookedAt.toDate) d=o.bookedAt.toDate().toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'Asia/Kolkata'});
+      else if(o.bookedAt&&typeof o.bookedAt==='string') d=new Date(o.bookedAt).toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+      return d===date;
+    }).forEach(function(o){
       var time='—';
       if(o.bookedAt&&o.bookedAt.toDate) time=o.bookedAt.toDate().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});
       else if(o.bookedAt&&typeof o.bookedAt==='string') time=new Date(o.bookedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
       var slug=o.status.replace(/\s/g,'');
-      html+='<tr><td><strong>'+h(o.name)+'</strong></td><td>'+h(o.phone)+'</td><td><span class="status-badge status-'+slug+'">'+h(o.status)+'</span></td><td>'+(o.address?h(o.address):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'<td style="font-size:.82rem;color:var(--sand);max-width:140px">'+(o.notes?h(o.notes):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>'+'</td><td>'+(o.fishDetails?h(o.fishDetails):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.kgQty?h(o.kgQty):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td style="color:var(--text-muted);font-size:.78rem">'+time+'</td>';
-      html+='<td style="display:flex;gap:.4rem"><button class="edit-btn" onclick=\'openEdit('+JSON.stringify(o)+')\'>Edit</button><button onclick=\'deleteOrder("'+o.id+'")\' style="background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.3);color:#ff8a8a;border-radius:8px;padding:.3rem .7rem;font-family:\'DM Sans\',sans-serif;font-size:.78rem;cursor:pointer">🗑</button></td></tr>';
+      html+='<tr><td><span style="font-family:monospace;font-size:.75rem;background:rgba(0,180,216,.1);color:var(--teal);padding:.2rem .5rem;border-radius:5px;white-space:nowrap">'+h(o.orderId||'—')+'</span></td>';
+      html+='<td><strong>'+h(o.name)+'</strong></td><td>'+h(o.phone)+'</td>';
+      html+='<td><span class="status-badge status-'+slug+'">'+h(o.status)+'</span></td>';
+      html+='<td>'+(o.address?h(o.address):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>';
+      html+='<td style="font-size:.82rem;color:var(--sand);max-width:140px">'+(o.notes?h(o.notes):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>';
+      html+='<td>'+(o.fishDetails?h(o.fishDetails):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>';
+      html+='<td>'+(o.kgQty?h(o.kgQty):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>';
+      html+='<td style="color:var(--green);font-weight:600">'+(o.totalPrice?'₹'+h(o.totalPrice):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td>';
+      html+='<td style="color:var(--text-muted);font-size:.78rem">'+time+'</td>';
+      html+='<td style="display:flex;gap:.4rem;flex-wrap:wrap"><button class="edit-btn" onclick=\'openEdit('+JSON.stringify(o)+')\'>Edit</button><button onclick=\'downloadBill('+JSON.stringify(o)+')\' style="background:rgba(0,201,107,.1);border:1px solid rgba(0,201,107,.3);color:var(--green);border-radius:8px;padding:.3rem .7rem;font-family:\'DM Sans\',sans-serif;font-size:.78rem;cursor:pointer">🧾</button><button onclick=\'deleteOrder("'+o.id+'")\' style="background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.3);color:#ff8a8a;border-radius:8px;padding:.3rem .7rem;font-family:\'DM Sans\',sans-serif;font-size:.78rem;cursor:pointer">🗑</button></td></tr>';
     });
     html+='</tbody></table></div></div>';
   });
   document.getElementById('ordersArea').innerHTML=html;
+}
+
+function filterOrders(status){
+  ['All','Pending','Confirmed','Delivered'].forEach(function(s){
+    var btn=document.getElementById('f-'+s);
+    if(btn) btn.classList.remove('active-filter');
+  });
+  var activeId=status==='Pending Call'?'f-Pending':status==='Confirmed'?'f-Confirmed':status==='Delivered'?'f-Delivered':'f-All';
+  var btn=document.getElementById(activeId);
+  if(btn) btn.classList.add('active-filter');
+  renderOrders(status==='All'?allOrders:allOrders.filter(function(o){return o.status===status;}));
 }
 
 async function deleteOrder(id){
@@ -524,12 +545,153 @@ async function deleteOrder(id){
     await loadOrders();
   }catch(e){alert('Delete failed.');console.error(e);}
 }
+// ── Fish items row management ──
+function addFishRow(name, kg, price){
+  var container=document.getElementById('fishItemsContainer');
+  var idx=container.children.length;
+  var row=document.createElement('div');
+  row.style.cssText='display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.4rem;align-items:center';
+  row.innerHTML=
+    '<input type="text" placeholder="Fish name" value="'+(name||'')+'" onchange="calcTotal()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:.55rem .8rem;color:var(--white);font-family:DM Sans,sans-serif;font-size:.85rem;outline:none">'+
+    '<input type="number" placeholder="Qty kg" value="'+(kg||'')+'" min="0" step="0.5" oninput="calcTotal()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:.55rem .8rem;color:var(--white);font-family:DM Sans,sans-serif;font-size:.85rem;outline:none">'+
+    '<input type="number" placeholder="₹/kg" value="'+(price||'')+'" min="0" oninput="calcTotal()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:.55rem .8rem;color:var(--white);font-family:DM Sans,sans-serif;font-size:.85rem;outline:none">'+
+    '<button type="button" onclick="this.parentElement.remove();calcTotal()" style="background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.3);color:#ff8a8a;border-radius:8px;padding:.5rem .6rem;cursor:pointer;font-size:.9rem">🗑</button>';
+  container.appendChild(row);
+}
+
+function calcTotal(){
+  var rows=document.getElementById('fishItemsContainer').children;
+  var total=0;
+  Array.from(rows).forEach(function(row){
+    var inputs=row.querySelectorAll('input');
+    var kg=parseFloat(inputs[1].value)||0;
+    var price=parseFloat(inputs[2].value)||0;
+    total+=kg*price;
+  });
+  if(total>0){
+    document.getElementById('editTotalPrice').value=total.toFixed(2);
+    document.getElementById('autoTotalLabel').textContent='= ₹'+total.toFixed(2)+' (auto)';
+  } else {
+    document.getElementById('autoTotalLabel').textContent='';
+  }
+}
+
+function getFishItems(){
+  var rows=document.getElementById('fishItemsContainer').children;
+  var items=[];
+  Array.from(rows).forEach(function(row){
+    var inputs=row.querySelectorAll('input');
+    var name=inputs[0].value.trim();
+    var kg=parseFloat(inputs[1].value)||0;
+    var price=parseFloat(inputs[2].value)||0;
+    if(name||kg||price) items.push({name:name,kg:kg,pricePerKg:price,subtotal:parseFloat((kg*price).toFixed(2))});
+  });
+  return items;
+}
+
+// ── Bill download ──
+function downloadBill(o){
+  var fishRows='';
+  var items=o.fishItems||[];
+  if(items.length>0){
+    items.forEach(function(f){
+      fishRows+='<tr><td>'+h(f.name||'—')+'</td><td style="text-align:center">'+h(String(f.kg||'—'))+' kg</td><td style="text-align:center">₹'+h(String(f.pricePerKg||'—'))+'</td><td style="text-align:right">₹'+h(String(f.subtotal||'—'))+'</td></tr>';
+    });
+  } else {
+    fishRows='<tr><td colspan="4" style="color:#999;text-align:center">No fish breakdown added yet</td></tr>';
+  }
+  var date='—';
+  if(o.bookedAt&&o.bookedAt.toDate) date=o.bookedAt.toDate().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+  else if(o.bookedAt&&typeof o.bookedAt==='string') date=new Date(o.bookedAt).toLocaleString('en-IN');
+
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bill - '+(o.orderId||o.id)+'</title>'+
+  '<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;padding:40px;max-width:680px;margin:0 auto;color:#1a1a1a}'+
+  '.header{text-align:center;border-bottom:3px solid #0a2540;padding-bottom:20px;margin-bottom:28px}'+
+  '.brand{font-size:2.2rem;font-weight:900;color:#0a2540;letter-spacing:-1px}.brand span{color:#00b4d8}'+
+  '.tagline{font-size:.85rem;color:#666;margin-top:4px;letter-spacing:1px;text-transform:uppercase}'+
+  '.order-id{background:#f0f8ff;border:1px solid #00b4d8;border-radius:8px;padding:10px 16px;display:inline-block;margin:16px 0;font-size:.9rem;color:#0a2540;font-family:monospace;font-weight:700;font-size:1rem}'+
+  '.section{margin-bottom:20px}.section h3{font-size:.75rem;text-transform:uppercase;letter-spacing:2px;color:#888;margin-bottom:8px;font-family:sans-serif}'+
+  '.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}'+
+  '.info-box{background:#f9f9f9;border:1px solid #eee;border-radius:8px;padding:12px 14px}'+
+  '.info-box .label{font-size:.72rem;text-transform:uppercase;letter-spacing:1px;color:#999;font-family:sans-serif;margin-bottom:3px}'+
+  '.info-box .value{font-size:.95rem;color:#1a1a1a;font-weight:600}'+
+  'table{width:100%;border-collapse:collapse;margin-top:8px}'+
+  'th{background:#0a2540;color:#fff;padding:10px 12px;text-align:left;font-family:sans-serif;font-size:.78rem;text-transform:uppercase;letter-spacing:1px}'+
+  'td{padding:9px 12px;border-bottom:1px solid #eee;font-size:.9rem}'+
+  'tr:last-child td{border-bottom:none}'+
+  '.total-row{background:#f0f8ff;font-weight:700;font-size:1.05rem}'+
+  '.total-row td{border-top:2px solid #00b4d8;padding:12px}'+
+  '.status-badge{display:inline-block;padding:4px 12px;border-radius:50px;font-size:.78rem;font-weight:600;font-family:sans-serif}'+
+  '.footer{margin-top:32px;padding-top:16px;border-top:1px solid #eee;text-align:center;font-size:.8rem;color:#999;font-family:sans-serif}'+
+  '.cod-badge{background:#e8f9f0;border:1px solid #00c96b;border-radius:8px;padding:10px 16px;text-align:center;color:#00873f;font-weight:600;margin:16px 0;font-family:sans-serif;font-size:.88rem}'+
+  '@media print{body{padding:20px}.no-print{display:none}}'+
+  '</style></head><body>'+
+  '<div class="header"><div class="brand">Fresh<span>Maach</span></div><div class="tagline">Farm-Direct Fish · Kolkata · Zero Middlemen</div></div>'+
+  '<div style="text-align:center"><div class="order-id">Order ID: '+(o.orderId||o.id)+'</div></div>'+
+  '<div class="section"><h3>Customer Details</h3><div class="info-grid">'+
+  '<div class="info-box"><div class="label">Name</div><div class="value">'+h(o.name||'—')+'</div></div>'+
+  '<div class="info-box"><div class="label">Phone</div><div class="value">'+h(o.phone||'—')+'</div></div>'+
+  '<div class="info-box" style="grid-column:1/-1"><div class="label">Delivery Address</div><div class="value">'+h(o.address||'—')+'</div></div>'+
+  '</div></div>'+
+  '<div class="section"><h3>Order Summary</h3>'+
+  '<table><thead><tr><th>Fish</th><th style="text-align:center">Qty</th><th style="text-align:center">Rate/kg</th><th style="text-align:right">Subtotal</th></tr></thead>'+
+  '<tbody>'+fishRows+'</tbody>'+
+  '<tfoot><tr class="total-row"><td colspan="3"><strong>Total Amount</strong></td><td style="text-align:right"><strong>₹'+(o.totalPrice||'—')+'</strong></td></tr></tfoot>'+
+  '</table></div>'+
+  '<div class="cod-badge">💵 Cash on Delivery — Payment collected at time of delivery</div>'+
+  '<div class="section"><h3>Order Info</h3><div class="info-grid">'+
+  '<div class="info-box"><div class="label">Booked On</div><div class="value" style="font-size:.85rem">'+date+'</div></div>'+
+  '<div class="info-box"><div class="label">Status</div><div class="value"><span class="status-badge" style="background:'+(o.status==='Delivered'?'#e8f9f0':o.status==='Confirmed'?'#e8f4ff':'#fff8e8')+';color:'+(o.status==='Delivered'?'#00873f':o.status==='Confirmed'?'#0070cc':'#8a5a00')+'">'+h(o.status||'—')+'</span></div></div>'+
+  (o.notes?'<div class="info-box" style="grid-column:1/-1"><div class="label">Notes</div><div class="value" style="font-size:.88rem;font-weight:400">'+h(o.notes)+'</div></div>':'')+
+  '</div></div>'+
+  '<div class="footer">FreshMaach · Farm-Direct Fish · Kolkata, West Bengal<br>Thank you for your order! 🐟</div>'+
+  '<script>window.onload=function(){window.print();}<\/script>'+
+  '</body></html>';
+
+  var blob=new Blob([html],{type:'text/html'});
+  var url=URL.createObjectURL(blob);
+  window.open(url,'_blank');
+}
+
+// ── Search orders by order ID ──
+function searchOrders(val){
+  val=val.trim().toUpperCase();
+  if(!val){filterOrders('All');return;}
+  var found=allOrders.filter(function(o){return (o.orderId||'').toUpperCase().includes(val);});
+  renderOrders(found);
+}
 function h(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function openEdit(o){document.getElementById('editId').value=o.id;document.getElementById('editName').value=o.name||'';document.getElementById('editPhone').value=o.phone||'';document.getElementById('editAddress').value=o.address||'';document.getElementById('editFish').value=o.fishDetails||'';document.getElementById('editKg').value=o.kgQty||'';document.getElementById('editStatus').value=o.status||'Pending Call';document.getElementById('editNotes').value=o.notes||'';document.getElementById('editModalBg').classList.add('open');}
+function openEdit(o){
+  document.getElementById('editId').value=o.id;
+  document.getElementById('editName').value=o.name||'';
+  document.getElementById('editPhone').value=o.phone||'';
+  document.getElementById('editAddress').value=o.address||'';
+  document.getElementById('editStatus').value=o.status||'Pending Call';
+  document.getElementById('editNotes').value=o.notes||'';
+  document.getElementById('editTotalPrice').value=o.totalPrice||'';
+  document.getElementById('autoTotalLabel').textContent='';
+  // load fish items
+  var container=document.getElementById('fishItemsContainer');
+  container.innerHTML='';
+  var items=o.fishItems||[];
+  if(items.length>0){items.forEach(function(f){addFishRow(f.name,f.kg,f.pricePerKg);});}
+  else{addFishRow();}
+  document.getElementById('editModalBg').classList.add('open');
+}
 function closeEdit(){document.getElementById('editModalBg').classList.remove('open');}
 async function saveEdit(){
   var id=document.getElementById('editId').value;
-  var data={address:document.getElementById('editAddress').value.trim(),fishDetails:document.getElementById('editFish').value.trim(),kgQty:document.getElementById('editKg').value.trim(),status:document.getElementById('editStatus').value,notes:document.getElementById('editNotes').value.trim()};
+  var fishItems=getFishItems();
+  var totalKg=fishItems.reduce(function(sum,f){return sum+(f.kg||0);},0);
+  var data={
+    address:document.getElementById('editAddress').value.trim(),
+    fishItems:fishItems,
+    fishDetails:fishItems.map(function(f){return f.name;}).join(', '),
+    kgQty:totalKg?totalKg+' kg':'',
+    totalPrice:document.getElementById('editTotalPrice').value.trim(),
+    status:document.getElementById('editStatus').value,
+    notes:document.getElementById('editNotes').value.trim()
+  };
   try{if(window._dbReady&&window._updateOrder){await window._updateOrder(id,data);}closeEdit();loadOrders();}
   catch(e){alert('Save failed. Check console.');console.error(e);}
 }
