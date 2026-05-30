@@ -36,10 +36,10 @@
   const auth = getAuth(app);
 
   // Customers: create bookings only (Firestore Rules block reading)
-  window._saveBooking = async (name, phone, kg, fish) => {
+  window._saveBooking = async (name, phone, kg, fish, address) => {
     const ref = await addDoc(collection(db, 'orders'), {
       name, phone: '+91' + phone,
-      kgQty: kg, fishDetails: fish,
+      kgQty: kg, fishDetails: fish, address: address,
       status: 'Pending Call',
       address: '', notes: '',
       bookedAt: serverTimestamp()
@@ -58,6 +58,7 @@
   window._updateOrder = async (id, data) => {
     await updateDoc(doc(db, 'orders', id), data);
   };
+  window._deleteOrder = async (id) => { const {deleteDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"); await deleteDoc(doc(db, 'orders', id)); };
 
   // Admin: login / logout
   window._adminLogin  = (email, pw) => signInWithEmailAndPassword(auth, email, pw);
@@ -182,6 +183,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)
 .status-Pending{background:rgba(244,168,50,.15);color:var(--gold);border:1px solid rgba(244,168,50,.3)}
 .status-Confirmed{background:rgba(0,180,216,.15);color:var(--teal);border:1px solid rgba(0,180,216,.3)}
 .status-Delivered{background:rgba(0,201,107,.15);color:var(--green);border:1px solid rgba(0,201,107,.3)}
+.filter-btn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--text-muted);border-radius:50px;padding:.4rem 1.1rem;font-family:'DM Sans',sans-serif;font-size:.82rem;cursor:pointer;transition:all .2s}
+.filter-btn:hover{border-color:var(--teal);color:var(--teal)}
+.active-filter{background:rgba(0,180,216,.15)!important;border-color:var(--teal)!important;color:var(--teal)!important}
 .edit-btn{background:rgba(0,180,216,.12);border:1px solid rgba(0,180,216,.25);color:var(--teal);border-radius:8px;padding:.3rem .8rem;font-family:'DM Sans',sans-serif;font-size:.78rem;cursor:pointer;transition:all .2s}
 .edit-btn:hover{background:rgba(0,180,216,.25)}
 .edit-modal-bg{display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.7);align-items:center;justify-content:center}
@@ -393,7 +397,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)
       <div class="astat"><div class="astat-num" id="cntConfirmed" style="color:var(--teal)">—</div><div class="astat-label">Confirmed</div></div>
       <div class="astat"><div class="astat-num" id="cntDelivered" style="color:var(--green)">—</div><div class="astat-label">Delivered</div></div>
     </div>
-    <div id="ordersArea"><div class="loading-state"><div class="spinner"></div>Loading orders…</div></div>
+    <div style="display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center">   <span style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-weight:500">Filter:</span>   <button onclick="filterOrders('All')" id="f-All" class="filter-btn active-filter">All</button>   <button onclick="filterOrders('Pending Call')" id="f-Pending" class="filter-btn">⏳ Pending</button>   <button onclick="filterOrders('Confirmed')" id="f-Confirmed" class="filter-btn">✅ Confirmed</button>   <button onclick="filterOrders('Delivered')" id="f-Delivered" class="filter-btn">📦 Delivered</button> </div> <div id="ordersArea"><div class="loading-state"><div class="spinner"></div>Loading orders…</div></div>
   </div>
 </div>
 <div class="edit-modal-bg" id="editModalBg">
@@ -428,16 +432,16 @@ document.getElementById('logoBtn').addEventListener('click',function(){logoPress
 function showToast(){var t=document.getElementById('toast');t.classList.add('show');setTimeout(function(){t.classList.remove('show');},5500);}
 async function handleBooking(){
   var nameEl=document.getElementById('fc-name'),phoneEl=document.getElementById('fc-phone'),pwEl=document.getElementById('phoneWrap'),kgEl=document.getElementById('fc-kg'),kgWrap=document.getElementById('kgWrap');
-  var name=nameEl.value.trim(),phone=phoneEl.value.trim(),kg=kgEl.value.trim(),fish=document.getElementById('fc-fish').value.trim();
+  var name=nameEl.value.trim(),phone=phoneEl.value.trim(),kg=kgEl.value.trim(),fish=document.getElementById('fc-fish').value.trim(),address=document.getElementById('fc-address').value.trim();
   nameEl.classList.remove('err');pwEl.classList.remove('err');kgWrap.classList.remove('err');
   if(!name){nameEl.classList.add('err');nameEl.focus();return;}
   if(!phone||phone.length<10){pwEl.classList.add('err');phoneEl.focus();return;}
-  if(!kg||parseInt(kg)<5){kgWrap.classList.add('err');kgEl.focus();return;}
+  if(!address){document.getElementById('fc-address').style.borderColor='var(--red)';document.getElementById('fc-address').focus();return;}
   var btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='Saving…';
   try{
-    if(window._dbReady&&window._saveBooking){await window._saveBooking(name,phone,kg+' kg',fish);}
+    if(window._dbReady&&window._saveBooking){await window._saveBooking(name,phone,kg+' kg',fish,address);}
     else{alert('Firebase not configured yet. Open index.html and paste your Firebase keys at the top.');}
-    nameEl.value='';phoneEl.value='';kgEl.value='';document.getElementById('fc-fish').value='';showToast();
+    nameEl.value='';phoneEl.value='';kgEl.value='';document.getElementById('fc-fish').value='';document.getElementById('fc-address').value='';showToast();
   }catch(e){alert('Could not save. Check your internet connection.');console.error(e);}
   btn.disabled=false;btn.innerHTML='📩 &nbsp; Submit Booking Request';
 }
@@ -454,17 +458,71 @@ async function checkLogin(){
 }
 function showDash(){document.getElementById('adminLogin').style.display='none';document.getElementById('adminDash').style.display='block';if(window._currentUser)document.getElementById('adminUserLabel').textContent='Logged in as: '+window._currentUser.email;loadOrders();}
 async function adminLogout(){if(window._adminLogout)await window._adminLogout();window._currentUser=null;document.getElementById('adminLogin').style.display='block';document.getElementById('adminDash').style.display='none';document.getElementById('adminEmail').value='';document.getElementById('adminPass').value='';}
+var allOrders=[];
 async function loadOrders(){
   document.getElementById('ordersArea').innerHTML='<div class="loading-state"><div class="spinner"></div>Loading orders…</div>';
-  var orders=[];
-  try{if(window._dbReady&&window._loadOrders){orders=await window._loadOrders();}else{document.getElementById('ordersArea').innerHTML='<div class="empty-state"><span>⚠️</span>Firebase not configured. Paste your keys in index.html first.</div>';return;}}
-  catch(e){document.getElementById('ordersArea').innerHTML='<div class="empty-state"><span>⚠️</span>Could not load orders. Make sure you are logged in and Firebase rules are set.</div>';console.error(e);return;}
-  var total=orders.length,pend=0,conf=0,delv=0;
-  orders.forEach(function(o){if(o.status==='Pending Call')pend++;else if(o.status==='Confirmed')conf++;else if(o.status==='Delivered')delv++;});
-  document.getElementById('cntTotal').textContent=total;document.getElementById('cntPending').textContent=pend;document.getElementById('cntConfirmed').textContent=conf;document.getElementById('cntDelivered').textContent=delv;
-  if(total===0){document.getElementById('ordersArea').innerHTML='<div class="empty-state"><span>📋</span>No orders yet. They will appear here once customers start booking.</div>';return;}
-  var rows=orders.map(function(o){var when='—';if(o.bookedAt&&o.bookedAt.toDate)when=o.bookedAt.toDate().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});else if(o.bookedAt&&typeof o.bookedAt==='string')when=new Date(o.bookedAt).toLocaleString('en-IN');var slug=o.status.replace(/\s/g,'');return '<tr><td><strong>'+h(o.name)+'</strong></td><td>'+h(o.phone)+'</td><td><span class="status-badge status-'+slug+'">'+h(o.status)+'</span></td><td>'+(o.address?h(o.address):'<span style="color:var(--text-muted);font-size:.78rem">Not collected yet</span>')+'</td><td>'+(o.fishDetails?h(o.fishDetails):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.kgQty?h(o.kgQty)+' kg':'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td style="color:var(--text-muted);font-size:.78rem">'+when+'</td><td><button class="edit-btn" onclick=\'openEdit('+JSON.stringify(o)+')\'>Edit</button></td></tr>';}).join('');
-  document.getElementById('ordersArea').innerHTML='<div class="admin-table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Address</th><th>Fish Type</th><th>Qty</th><th>Booked At</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  try{
+    if(window._dbReady&&window._loadOrders){allOrders=await window._loadOrders();}
+    else{allOrders=JSON.parse(localStorage.getItem('fc_orders')||'[]');}
+  }catch(e){document.getElementById('ordersArea').innerHTML='<div class="empty-state"><span>⚠️</span>Could not load orders.</div>';console.error(e);return;}
+  var total=allOrders.length,pend=0,conf=0,delv=0;
+  allOrders.forEach(function(o){if(o.status==='Pending Call')pend++;else if(o.status==='Confirmed')conf++;else if(o.status==='Delivered')delv++;});
+  document.getElementById('cntTotal').textContent=total;
+  document.getElementById('cntPending').textContent=pend;
+  document.getElementById('cntConfirmed').textContent=conf;
+  document.getElementById('cntDelivered').textContent=delv;
+  filterOrders('All');
+}
+
+function filterOrders(status){
+  // update active button
+  ['All','Pending','Confirmed','Delivered'].forEach(function(s){
+    var btn=document.getElementById('f-'+s);
+    if(btn) btn.classList.remove('active-filter');
+  });
+  var activeId = status==='Pending Call'?'f-Pending':status==='Confirmed'?'f-Confirmed':status==='Delivered'?'f-Delivered':'f-All';
+  var btn=document.getElementById(activeId);
+  if(btn) btn.classList.add('active-filter');
+
+  var orders = status==='All' ? allOrders : allOrders.filter(function(o){return o.status===status;});
+
+  if(orders.length===0){document.getElementById('ordersArea').innerHTML='<div class="empty-state"><span>📋</span>No orders found.</div>';return;}
+
+  // Group by date
+  var groups={};
+  orders.forEach(function(o){
+    var date='Unknown Date';
+    if(o.bookedAt&&o.bookedAt.toDate) date=o.bookedAt.toDate().toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'Asia/Kolkata'});
+    else if(o.bookedAt&&typeof o.bookedAt==='string') date=new Date(o.bookedAt).toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    if(!groups[date]) groups[date]=[];
+    groups[date].push(o);
+  });
+
+  var html='';
+  Object.keys(groups).forEach(function(date){
+    html+='<div style="margin-bottom:2rem">';
+    html+='<div style="font-size:.8rem;color:var(--teal);text-transform:uppercase;letter-spacing:2px;font-weight:500;padding:.5rem 0;border-bottom:1px solid rgba(0,180,216,.15);margin-bottom:.8rem">📅 '+date+'</div>';
+    html+='<div class="admin-table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Address</th><th>Fish</th><th>Qty</th><th>Time</th><th></th></tr></thead><tbody>';
+    groups[date].forEach(function(o){
+      var time='—';
+      if(o.bookedAt&&o.bookedAt.toDate) time=o.bookedAt.toDate().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});
+      else if(o.bookedAt&&typeof o.bookedAt==='string') time=new Date(o.bookedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+      var slug=o.status.replace(/\s/g,'');
+      html+='<tr><td><strong>'+h(o.name)+'</strong></td><td>'+h(o.phone)+'</td><td><span class="status-badge status-'+slug+'">'+h(o.status)+'</span></td><td>'+(o.address?h(o.address):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.fishDetails?h(o.fishDetails):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td>'+(o.kgQty?h(o.kgQty):'<span style="color:var(--text-muted);font-size:.78rem">—</span>')+'</td><td style="color:var(--text-muted);font-size:.78rem">'+time+'</td>';
+      html+='<td style="display:flex;gap:.4rem"><button class="edit-btn" onclick=\'openEdit('+JSON.stringify(o)+')\'>Edit</button><button onclick=\'deleteOrder("'+o.id+'")\' style="background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.3);color:#ff8a8a;border-radius:8px;padding:.3rem .7rem;font-family:\'DM Sans\',sans-serif;font-size:.78rem;cursor:pointer">🗑</button></td></tr>';
+    });
+    html+='</tbody></table></div></div>';
+  });
+  document.getElementById('ordersArea').innerHTML=html;
+}
+
+async function deleteOrder(id){
+  if(!confirm('Delete this order? This cannot be undone.')) return;
+  try{
+    if(window._dbReady&&window._deleteOrder){await window._deleteOrder(id);}
+    else{var orders=JSON.parse(localStorage.getItem('fc_orders')||'[]');orders=orders.filter(function(o){return o.id!==id;});localStorage.setItem('fc_orders',JSON.stringify(orders));}
+    await loadOrders();
+  }catch(e){alert('Delete failed.');console.error(e);}
 }
 function h(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function openEdit(o){document.getElementById('editId').value=o.id;document.getElementById('editName').value=o.name||'';document.getElementById('editPhone').value=o.phone||'';document.getElementById('editAddress').value=o.address||'';document.getElementById('editFish').value=o.fishDetails||'';document.getElementById('editKg').value=o.kgQty||'';document.getElementById('editStatus').value=o.status||'Pending Call';document.getElementById('editNotes').value=o.notes||'';document.getElementById('editModalBg').classList.add('open');}
