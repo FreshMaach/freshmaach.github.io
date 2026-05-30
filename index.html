@@ -412,6 +412,17 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)
     <div class="edit-field"><label>Phone</label><input type="text" id="editPhone" readonly style="opacity:.6;cursor:not-allowed"></div>
     <div class="edit-field"><label>Delivery Address</label><input type="text" id="editAddress" placeholder="Full delivery address collected on call"></div>
     <div class="edit-field">
+  <label>Total Quantity (kg) * <span style="color:var(--teal);font-size:.72rem;text-transform:none;letter-spacing:0;font-weight:400">— minimum 5 kg</span></label>
+  <div class="phone-wrap" id="editKgWrap" style="border-radius:10px">
+    <div class="phone-prefix" style="border-radius:0">⚖️ KG</div>
+    <input type="number" id="editTotalKg" min="5" step="0.5" placeholder="e.g. 10" oninput="checkKgLimit()" style="flex:1;background:transparent;border:none;padding:.75rem 1rem;color:var(--white);font-family:'DM Sans',sans-serif;font-size:.95rem;outline:none">
+  </div>
+  <div id="kgWarning" style="display:none;margin-top:.5rem;background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.4);border-radius:8px;padding:.6rem .9rem;font-size:.82rem;color:#ff8a8a;font-weight:500">
+    ⚠️ Fish breakdown total exceeds the total quantity. Please increase total quantity or reduce fish quantities.
+  </div>
+  <div id="kgProgress" style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)"></div>
+</div>
+    <div class="edit-field">
   <label>Fish Breakdown <span style="color:var(--teal);font-size:.72rem;text-transform:none;letter-spacing:0;font-weight:400">— Add each fish separately</span></label>
   <div id="fishItemsContainer" style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:.6rem"></div>
   <button type="button" onclick="addFishRow()" style="background:rgba(0,180,216,.1);border:1px dashed rgba(0,180,216,.4);color:var(--teal);border-radius:8px;padding:.5rem 1rem;font-family:'DM Sans',sans-serif;font-size:.82rem;cursor:pointer;width:100%;transition:all .2s">+ Add Fish</button>
@@ -561,18 +572,67 @@ function addFishRow(name, kg, price){
 
 function calcTotal(){
   var rows=document.getElementById('fishItemsContainer').children;
-  var total=0;
+  var totalPrice=0, totalFishKg=0;
   Array.from(rows).forEach(function(row){
     var inputs=row.querySelectorAll('input');
     var kg=parseFloat(inputs[1].value)||0;
     var price=parseFloat(inputs[2].value)||0;
-    total+=kg*price;
+    totalFishKg+=kg;
+    totalPrice+=kg*price;
   });
-  if(total>0){
-    document.getElementById('editTotalPrice').value=total.toFixed(2);
-    document.getElementById('autoTotalLabel').textContent='= ₹'+total.toFixed(2)+' (auto)';
+  // price
+  if(totalPrice>0){
+    document.getElementById('editTotalPrice').value=totalPrice.toFixed(2);
+    document.getElementById('autoTotalLabel').textContent='= ₹'+totalPrice.toFixed(2)+' (auto)';
   } else {
     document.getElementById('autoTotalLabel').textContent='';
+  }
+  checkKgLimit(totalFishKg);
+}
+
+function checkKgLimit(fishKgSum){
+  var totalKgEl=document.getElementById('editTotalKg');
+  var warning=document.getElementById('kgWarning');
+  var progress=document.getElementById('kgProgress');
+  var totalKg=parseFloat(totalKgEl.value)||0;
+
+  // min 5kg check on total
+  if(totalKg>0&&totalKg<5){
+    totalKgEl.style.borderColor='var(--red)';
+    progress.innerHTML='<span style="color:var(--red)">⚠️ Minimum total quantity is 5 kg</span>';
+    warning.style.display='none';
+    return;
+  } else {
+    totalKgEl.style.borderColor='';
+  }
+
+  // if fishKgSum not passed, calculate it
+  if(fishKgSum===undefined){
+    var rows=document.getElementById('fishItemsContainer').children;
+    fishKgSum=0;
+    Array.from(rows).forEach(function(row){
+      fishKgSum+=parseFloat(row.querySelectorAll('input')[1].value)||0;
+    });
+  }
+
+  if(totalKg<=0){progress.innerHTML='';warning.style.display='none';return;}
+
+  var remaining=totalKg-fishKgSum;
+  if(fishKgSum>totalKg){
+    // over limit — red signal
+    warning.style.display='block';
+    progress.innerHTML='<span style="color:var(--red)">🔴 Fish total: <strong>'+fishKgSum.toFixed(1)+' kg</strong> — exceeds limit by <strong>'+(fishKgSum-totalKg).toFixed(1)+' kg</strong></span>';
+    document.getElementById('editKgWrap').style.borderColor='rgba(255,90,90,.6)';
+  } else if(fishKgSum===totalKg){
+    // perfect match — green
+    warning.style.display='none';
+    progress.innerHTML='<span style="color:var(--green)">✅ Fish total: <strong>'+fishKgSum.toFixed(1)+' kg</strong> — matches perfectly</span>';
+    document.getElementById('editKgWrap').style.borderColor='rgba(0,201,107,.5)';
+  } else {
+    // under — show remaining
+    warning.style.display='none';
+    progress.innerHTML='<span style="color:var(--teal)">Fish total: <strong>'+fishKgSum.toFixed(1)+' kg</strong> — <strong>'+remaining.toFixed(1)+' kg</strong> remaining to assign</span>';
+    document.getElementById('editKgWrap').style.borderColor='rgba(0,180,216,.4)';
   }
 }
 
@@ -670,6 +730,10 @@ function openEdit(o){
   document.getElementById('editNotes').value=o.notes||'';
   document.getElementById('editTotalPrice').value=o.totalPrice||'';
   document.getElementById('autoTotalLabel').textContent='';
+  document.getElementById('editTotalKg').value=o.kgQty?parseFloat(o.kgQty)||'':'';
+  document.getElementById('kgWarning').style.display='none';
+  document.getElementById('kgProgress').innerHTML='';
+  document.getElementById('editKgWrap').style.borderColor='';
   // load fish items
   var container=document.getElementById('fishItemsContainer');
   container.innerHTML='';
@@ -681,13 +745,28 @@ function openEdit(o){
 function closeEdit(){document.getElementById('editModalBg').classList.remove('open');}
 async function saveEdit(){
   var id=document.getElementById('editId').value;
+  var totalKgVal=parseFloat(document.getElementById('editTotalKg').value)||0;
+
+  // validate total kg
+  if(totalKgVal<5){
+    document.getElementById('editTotalKg').focus();
+    alert('Total quantity must be at least 5 kg.');
+    return;
+  }
+
+  // validate fish items don't exceed total
   var fishItems=getFishItems();
-  var totalKg=fishItems.reduce(function(sum,f){return sum+(f.kg||0);},0);
+  var fishKgSum=fishItems.reduce(function(sum,f){return sum+(f.kg||0);},0);
+  if(fishKgSum>totalKgVal){
+    alert('Fish breakdown total ('+fishKgSum.toFixed(1)+' kg) exceeds total quantity ('+totalKgVal+' kg). Please fix before saving.');
+    return;
+  }
+
   var data={
     address:document.getElementById('editAddress').value.trim(),
     fishItems:fishItems,
     fishDetails:fishItems.map(function(f){return f.name;}).join(', '),
-    kgQty:totalKg?totalKg+' kg':'',
+    kgQty:totalKgVal+' kg',
     totalPrice:document.getElementById('editTotalPrice').value.trim(),
     status:document.getElementById('editStatus').value,
     notes:document.getElementById('editNotes').value.trim()
